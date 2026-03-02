@@ -5,6 +5,7 @@ const https = require('https');
 const fs = require('fs');
 const path = require('path');
 const { WebSocketServer } = require('ws');
+const bcrypt = require('bcrypt');
 const pty = require('node-pty');
 const os = require('os');
 
@@ -28,17 +29,18 @@ if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
 
 const wss = new WebSocketServer({ server });
 
-const PASSWORD = process.env.TERMINAL_PASSWORD || 'changeme';
+const PASSWORD_HASH = process.env.TERMINAL_PASSWORD_HASH || '';
 const PORT = process.env.PORT || 5000;
 const shell = os.platform() === 'win32' ? 'powershell.exe' : 'bash';
 
 app.use(express.static('public'));
 
-wss.on('connection', (ws, req) => {
+wss.on('connection', async (ws, req) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
   const token = url.searchParams.get('token');
 
-  if (token !== PASSWORD) {
+  const valid = await bcrypt.compare(token || '', PASSWORD_HASH);
+  if (!valid) {
     ws.send(JSON.stringify({ type: 'auth_failed' }));
     ws.close();
     return;
