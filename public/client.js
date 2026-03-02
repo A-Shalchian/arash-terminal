@@ -27,6 +27,9 @@ function connect(password) {
     } else if (msg.type === 'auth_failed') {
       errorMsg.textContent = 'Wrong password';
       ws.close();
+    } else if (msg.type === 'rate_limited') {
+      errorMsg.textContent = 'Too many failed attempts. Try again in 15 minutes.';
+      ws.close();
     }
   };
 

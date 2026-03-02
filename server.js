@@ -33,18 +33,57 @@ const PASSWORD_HASH = process.env.TERMINAL_PASSWORD_HASH || '';
 const PORT = process.env.PORT || 5000;
 const shell = os.platform() === 'win32' ? 'powershell.exe' : 'bash';
 
+// Rate limiting: track failed auth attempts per IP
+const MAX_ATTEMPTS = 5;
+const LOCKOUT_MS = 15 * 60 * 1000; // 15 minutes
+const failedAttempts = new Map(); // ip -> { count, lastAttempt }
+
+function isRateLimited(ip) {
+  const record = failedAttempts.get(ip);
+  if (!record) return false;
+  if (Date.now() - record.lastAttempt > LOCKOUT_MS) {
+    failedAttempts.delete(ip);
+    return false;
+  }
+  return record.count >= MAX_ATTEMPTS;
+}
+
+function recordFailure(ip) {
+  const record = failedAttempts.get(ip) || { count: 0, lastAttempt: 0 };
+  record.count++;
+  record.lastAttempt = Date.now();
+  failedAttempts.set(ip, record);
+}
+
+function clearFailures(ip) {
+  failedAttempts.delete(ip);
+}
+
 app.use(express.static('public'));
 
 wss.on('connection', async (ws, req) => {
+  const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress;
   const url = new URL(req.url, `http://${req.headers.host}`);
   const token = url.searchParams.get('token');
 
+  if (isRateLimited(ip)) {
+    ws.send(JSON.stringify({ type: 'rate_limited' }));
+    ws.close();
+    console.log(`Rate limited: ${ip}`);
+    return;
+  }
+
   const valid = await bcrypt.compare(token || '', PASSWORD_HASH);
   if (!valid) {
+    recordFailure(ip);
+    const record = failedAttempts.get(ip);
+    console.log(`Auth failed from ${ip} (attempt ${record.count}/${MAX_ATTEMPTS})`);
     ws.send(JSON.stringify({ type: 'auth_failed' }));
     ws.close();
     return;
   }
+
+  clearFailures(ip);
 
   const ptyProcess = pty.spawn(shell, [], {
     name: 'xterm-256color',
