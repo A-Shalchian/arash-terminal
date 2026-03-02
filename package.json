@@ -1,0 +1,17 @@
+{
+  "name": "arash-terminal",
+  "version": "1.0.0",
+  "description": "Web-based terminal accessible from your phone",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "tunnel": "node server.js --tunnel"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "localtunnel": "^2.0.2",
+    "node-pty": "^1.0.0",
+    "ws": "^8.18.0"
+  }
+}

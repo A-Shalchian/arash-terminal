@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Arash Terminal</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/css/xterm.min.css">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div id="login-screen">
+    <div class="login-box">
+      <h1>Arash Terminal</h1>
+      <input type="password" id="password" placeholder="Password" autofocus>
+      <button id="login-btn">Connect</button>
+      <p id="error-msg"></p>
+    </div>
+  </div>
+
+  <div id="terminal-screen" class="hidden">
+    <div id="terminal"></div>
+    <div id="toolbar">
+      <button data-key="\x1b">Esc</button>
+      <button data-key="\x09">Tab</button>
+      <button id="ctrl-btn" class="toggle-btn">Ctrl</button>
+      <button data-key="\x1b[A">&#9650;</button>
+      <button data-key="\x1b[B">&#9660;</button>
+      <button data-key="\x1b[D">&#9664;</button>
+      <button data-key="\x1b[C">&#9654;</button>
+      <button data-key="\x03">C-c</button>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/xterm@5.5.0/lib/xterm.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-fit@0.10.0/lib/addon-fit.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@xterm/addon-web-links@0.11.0/lib/addon-web-links.min.js"></script>
+  <script src="client.js"></script>
+</body>
+</html>
