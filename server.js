@@ -6,6 +6,8 @@ const fs = require('fs');
 const path = require('path');
 const { WebSocketServer } = require('ws');
 const bcrypt = require('bcrypt');
+const jwt = require('jsonwebtoken');
+const crypto = require('crypto');
 const pty = require('node-pty');
 const os = require('os');
 
@@ -30,6 +32,7 @@ if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
 const wss = new WebSocketServer({ server });
 
 const PASSWORD_HASH = process.env.TERMINAL_PASSWORD_HASH || '';
+const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex');
 const PORT = process.env.PORT || 5000;
 const shell = os.platform() === 'win32' ? 'powershell.exe' : 'bash';
 
@@ -59,31 +62,43 @@ function clearFailures(ip) {
   failedAttempts.delete(ip);
 }
 
+app.use(express.json());
 app.use(express.static('public'));
 
-wss.on('connection', async (ws, req) => {
+// Auth endpoint: POST password, receive JWT
+app.post('/api/auth', async (req, res) => {
   const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress;
-  const url = new URL(req.url, `http://${req.headers.host}`);
-  const token = url.searchParams.get('token');
 
   if (isRateLimited(ip)) {
-    ws.send(JSON.stringify({ type: 'rate_limited' }));
-    ws.close();
-    console.log(`Rate limited: ${ip}`);
-    return;
+    return res.status(429).json({ error: 'Too many failed attempts. Try again in 15 minutes.' });
   }
 
-  const valid = await bcrypt.compare(token || '', PASSWORD_HASH);
+  const { password } = req.body;
+  const valid = await bcrypt.compare(password || '', PASSWORD_HASH);
+
   if (!valid) {
     recordFailure(ip);
     const record = failedAttempts.get(ip);
     console.log(`Auth failed from ${ip} (attempt ${record.count}/${MAX_ATTEMPTS})`);
+    return res.status(401).json({ error: 'Wrong password' });
+  }
+
+  clearFailures(ip);
+  const token = jwt.sign({ ip }, JWT_SECRET, { expiresIn: '1h' });
+  res.json({ token });
+});
+
+wss.on('connection', (ws, req) => {
+  const url = new URL(req.url, `http://${req.headers.host}`);
+  const token = url.searchParams.get('token');
+
+  try {
+    jwt.verify(token, JWT_SECRET);
+  } catch (e) {
     ws.send(JSON.stringify({ type: 'auth_failed' }));
     ws.close();
     return;
   }
-
-  clearFailures(ip);
 
   const ptyProcess = pty.spawn(shell, [], {
     name: 'xterm-256color',

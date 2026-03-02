@@ -10,9 +10,31 @@ let term = null;
 let fitAddon = null;
 let ctrlActive = false;
 
-function connect(password) {
+async function connect(password) {
+  errorMsg.textContent = '';
+
+  // Step 1: POST password to get a JWT
+  let token;
+  try {
+    const res = await fetch('/api/auth', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      errorMsg.textContent = data.error;
+      return;
+    }
+    token = data.token;
+  } catch (e) {
+    errorMsg.textContent = 'Connection failed';
+    return;
+  }
+
+  // Step 2: Connect WebSocket with the JWT
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
-  ws = new WebSocket(`${protocol}//${location.host}/?token=${encodeURIComponent(password)}`);
+  ws = new WebSocket(`${protocol}//${location.host}/?token=${encodeURIComponent(token)}`);
 
   ws.onopen = () => {
     loginScreen.classList.add('hidden');
@@ -25,10 +47,7 @@ function connect(password) {
     if (msg.type === 'output') {
       term.write(msg.data);
     } else if (msg.type === 'auth_failed') {
-      errorMsg.textContent = 'Wrong password';
-      ws.close();
-    } else if (msg.type === 'rate_limited') {
-      errorMsg.textContent = 'Too many failed attempts. Try again in 15 minutes.';
+      errorMsg.textContent = 'Session expired. Please log in again.';
       ws.close();
     }
   };
