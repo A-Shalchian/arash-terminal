@@ -36,6 +36,38 @@ const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('he
 const PORT = process.env.PORT || 5000;
 const shell = os.platform() === 'win32' ? 'powershell.exe' : 'bash';
 
+// IP Allowlisting: comma-separated IPs or CIDRs (e.g. "192.168.1.0/24,10.0.0.5")
+// Leave ALLOWED_IPS empty or unset to allow all
+const ALLOWED_IPS = process.env.ALLOWED_IPS
+  ? process.env.ALLOWED_IPS.split(',').map(s => s.trim()).filter(Boolean)
+  : [];
+
+function parseIPv4(ip) {
+  // Strip IPv6-mapped prefix (::ffff:192.168.1.1 -> 192.168.1.1)
+  const cleaned = ip.replace(/^.*:/, '');
+  const parts = cleaned.split('.');
+  if (parts.length !== 4) return null;
+  return parts.reduce((num, octet) => (num << 8) + parseInt(octet, 10), 0) >>> 0;
+}
+
+function isIPAllowed(ip) {
+  if (ALLOWED_IPS.length === 0) return true;
+  const ipNum = parseIPv4(ip);
+  if (ipNum === null) return false;
+
+  for (const entry of ALLOWED_IPS) {
+    if (entry.includes('/')) {
+      const [subnet, bits] = entry.split('/');
+      const subnetNum = parseIPv4(subnet);
+      const mask = bits === '0' ? 0 : (~0 << (32 - parseInt(bits, 10))) >>> 0;
+      if ((ipNum & mask) === (subnetNum & mask)) return true;
+    } else {
+      if (ipNum === parseIPv4(entry)) return true;
+    }
+  }
+  return false;
+}
+
 // Rate limiting: track failed auth attempts per IP
 const MAX_ATTEMPTS = 5;
 const LOCKOUT_MS = 15 * 60 * 1000; // 15 minutes
@@ -61,6 +93,16 @@ function recordFailure(ip) {
 function clearFailures(ip) {
   failedAttempts.delete(ip);
 }
+
+// IP allowlist middleware — blocks all HTTP requests from disallowed IPs
+app.use((req, res, next) => {
+  const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress;
+  if (!isIPAllowed(ip)) {
+    console.log(`Blocked IP: ${ip}`);
+    return res.status(403).end();
+  }
+  next();
+});
 
 app.use(express.json());
 app.use(express.static('public'));
@@ -89,6 +131,14 @@ app.post('/api/auth', async (req, res) => {
 });
 
 wss.on('connection', (ws, req) => {
+  const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress;
+
+  if (!isIPAllowed(ip)) {
+    console.log(`Blocked WebSocket from IP: ${ip}`);
+    ws.close();
+    return;
+  }
+
   const url = new URL(req.url, `http://${req.headers.host}`);
   const token = url.searchParams.get('token');
 
@@ -151,6 +201,7 @@ server.listen(PORT, '0.0.0.0', async () => {
   console.log(`Arash Terminal running on ${useHTTPS ? 'HTTPS' : 'HTTP (no certs found, run: npm run gen-cert)'}:`);
   console.log(`  Local:   ${proto}://localhost:${PORT}`);
   console.log(`  Network: ${proto}://${lanIP}:${PORT}`);
+  console.log(`  IP allow: ${ALLOWED_IPS.length ? ALLOWED_IPS.join(', ') : 'all (no restriction)'}`);
 
   if (process.argv.includes('--tunnel')) {
     try {
