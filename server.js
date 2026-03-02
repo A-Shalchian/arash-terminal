@@ -1,16 +1,35 @@
 require('dotenv').config();
 const express = require('express');
 const http = require('http');
+const https = require('https');
+const fs = require('fs');
+const path = require('path');
 const { WebSocketServer } = require('ws');
 const pty = require('node-pty');
 const os = require('os');
 
 const app = express();
-const server = http.createServer(app);
+
+// Try to load TLS certs for HTTPS, fall back to HTTP
+const certPath = path.join(__dirname, 'certs', 'cert.pem');
+const keyPath = path.join(__dirname, 'certs', 'key.pem');
+let server;
+let useHTTPS = false;
+
+if (fs.existsSync(certPath) && fs.existsSync(keyPath)) {
+  server = https.createServer({
+    cert: fs.readFileSync(certPath),
+    key: fs.readFileSync(keyPath),
+  }, app);
+  useHTTPS = true;
+} else {
+  server = http.createServer(app);
+}
+
 const wss = new WebSocketServer({ server });
 
 const PASSWORD = process.env.TERMINAL_PASSWORD || 'changeme';
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 5000;
 const shell = os.platform() === 'win32' ? 'powershell.exe' : 'bash';
 
 app.use(express.static('public'));
@@ -72,9 +91,10 @@ server.listen(PORT, '0.0.0.0', async () => {
       }
     }
   }
-  console.log(`Arash Terminal running on:`);
-  console.log(`  Local:   http://localhost:${PORT}`);
-  console.log(`  Network: http://${lanIP}:${PORT}`);
+  const proto = useHTTPS ? 'https' : 'http';
+  console.log(`Arash Terminal running on ${useHTTPS ? 'HTTPS' : 'HTTP (no certs found, run: npm run gen-cert)'}:`);
+  console.log(`  Local:   ${proto}://localhost:${PORT}`);
+  console.log(`  Network: ${proto}://${lanIP}:${PORT}`);
 
   if (process.argv.includes('--tunnel')) {
     try {

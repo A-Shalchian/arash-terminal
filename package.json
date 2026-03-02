@@ -5,7 +5,8 @@
   "main": "server.js",
   "scripts": {
     "start": "node server.js",
-    "tunnel": "node server.js --tunnel"
+    "tunnel": "node server.js --tunnel",
+    "gen-cert": "node -e \"require('fs').mkdirSync('certs',{recursive:true})\" && openssl req -x509 -newkey rsa:2048 -keyout certs/key.pem -out certs/cert.pem -days 365 -nodes -subj \"/CN=arash-terminal\""
   },
   "dependencies": {
     "dotenv": "^16.4.7",
