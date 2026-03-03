@@ -13,7 +13,6 @@ const os = require('os');
 
 const app = express();
 
-// Try to load TLS certs for HTTPS, fall back to HTTP
 const certPath = path.join(__dirname, 'certs', 'cert.pem');
 const keyPath = path.join(__dirname, 'certs', 'key.pem');
 let server;
@@ -68,10 +67,9 @@ function isIPAllowed(ip) {
   return false;
 }
 
-// Rate limiting: track failed auth attempts per IP
 const MAX_ATTEMPTS = 5;
-const LOCKOUT_MS = 15 * 60 * 1000; // 15 minutes
-const failedAttempts = new Map(); // ip -> { count, lastAttempt }
+const LOCKOUT_MS = 15 * 60 * 1000;
+const failedAttempts = new Map();
 
 function isRateLimited(ip) {
   const record = failedAttempts.get(ip);
@@ -94,7 +92,6 @@ function clearFailures(ip) {
   failedAttempts.delete(ip);
 }
 
-// IP allowlist middleware — blocks all HTTP requests from disallowed IPs
 app.use((req, res, next) => {
   const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress;
   if (!isIPAllowed(ip)) {
@@ -107,7 +104,6 @@ app.use((req, res, next) => {
 app.use(express.json());
 app.use(express.static('public'));
 
-// Auth endpoint: POST password, receive JWT
 app.post('/api/auth', async (req, res) => {
   const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress;
 
@@ -155,15 +151,17 @@ wss.on('connection', (ws, req) => {
     cols: 80,
     rows: 24,
     cwd: process.env.HOME || process.env.USERPROFILE,
-    env: process.env,
+    env: Object.fromEntries(
+      Object.entries(process.env).filter(([key]) =>
+        !['TERMINAL_PASSWORD_HASH', 'JWT_SECRET', 'ALLOWED_IPS'].includes(key)
+      )
+    ),
   });
 
   ptyProcess.onData((data) => {
     try {
       ws.send(JSON.stringify({ type: 'output', data }));
-    } catch (e) {
-      // WebSocket closed
-    }
+    } catch (e) {}
   });
 
   ws.on('message', (msg) => {
@@ -174,9 +172,7 @@ wss.on('connection', (ws, req) => {
       } else if (parsed.type === 'resize') {
         ptyProcess.resize(parsed.cols, parsed.rows);
       }
-    } catch (e) {
-      // Ignore malformed messages
-    }
+    } catch (e) {}
   });
 
   ws.on('close', () => {

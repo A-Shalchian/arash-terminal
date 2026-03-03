@@ -13,7 +13,6 @@ let ctrlActive = false;
 async function connect(password) {
   errorMsg.textContent = '';
 
-  // Step 1: POST password to get a JWT
   let token;
   try {
     const res = await fetch('/api/auth', {
@@ -32,7 +31,6 @@ async function connect(password) {
     return;
   }
 
-  // Step 2: Connect WebSocket with the JWT
   const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
   ws = new WebSocket(`${protocol}//${location.host}/?token=${encodeURIComponent(token)}`);
 
@@ -99,7 +97,6 @@ function initTerminal() {
 
   window.addEventListener('resize', () => fitAddon.fit());
 
-  // Custom touch scrolling for mobile
   const termEl = document.getElementById('terminal');
   let touchStartY = null;
   let touchAccum = 0;
@@ -131,7 +128,6 @@ function initTerminal() {
     touchAccum = 0;
   }, { passive: true });
 
-  // Tap terminal to focus
   termEl.addEventListener('click', () => {
     term.focus();
   });
@@ -147,13 +143,11 @@ function sendResize() {
   }
 }
 
-// Login handlers
 loginBtn.addEventListener('click', () => connect(passwordInput.value));
 passwordInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') connect(passwordInput.value);
 });
 
-// Toolbar button handlers
 document.querySelectorAll('#toolbar button[data-key]').forEach((btn) => {
   btn.addEventListener('click', (e) => {
     e.preventDefault();
@@ -164,7 +158,6 @@ document.querySelectorAll('#toolbar button[data-key]').forEach((btn) => {
   });
 });
 
-// Ctrl toggle
 ctrlBtn.addEventListener('click', (e) => {
   e.preventDefault();
   ctrlActive = !ctrlActive;
@@ -172,12 +165,11 @@ ctrlBtn.addEventListener('click', (e) => {
   term?.focus();
 });
 
-// Handle orientation change on mobile
 window.addEventListener('orientationchange', () => {
   setTimeout(sendResize, 200);
 });
 
-// Handle iOS Safari address bar resize
+// iOS Safari address bar resizing triggers viewport changes
 window.visualViewport?.addEventListener('resize', () => {
   sendResize();
 });
