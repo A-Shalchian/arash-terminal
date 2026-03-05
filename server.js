@@ -8,10 +8,22 @@ const { WebSocketServer } = require('ws');
 const bcrypt = require('bcrypt');
 const jwt = require('jsonwebtoken');
 const crypto = require('crypto');
+const helmet = require('helmet');
 const pty = require('node-pty');
 const os = require('os');
 
 const app = express();
+
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      scriptSrc: ["'self'", 'cdn.jsdelivr.net'],
+      styleSrc: ["'self'", 'cdn.jsdelivr.net'],
+      connectSrc: ["'self'", 'ws:', 'wss:'],
+    },
+  },
+}));
 
 const certPath = path.join(__dirname, 'certs', 'cert.pem');
 const keyPath = path.join(__dirname, 'certs', 'key.pem');
@@ -32,6 +44,9 @@ const wss = new WebSocketServer({ server });
 
 const PASSWORD_HASH = process.env.TERMINAL_PASSWORD_HASH || '';
 const JWT_SECRET = process.env.JWT_SECRET || crypto.randomBytes(32).toString('hex');
+if (!process.env.JWT_SECRET) {
+  console.warn('WARNING: JWT_SECRET not set — generated a random one. Tokens will invalidate on restart.');
+}
 const PORT = process.env.PORT || 5000;
 const shell = os.platform() === 'win32' ? 'powershell.exe' : 'bash';
 
@@ -105,6 +120,15 @@ app.use(express.json());
 app.use(express.static('public'));
 
 app.post('/api/auth', async (req, res) => {
+  const origin = req.headers.origin;
+  if (origin) {
+    const host = req.headers.host;
+    const allowed = [`http://${host}`, `https://${host}`];
+    if (!allowed.includes(origin)) {
+      return res.status(403).json({ error: 'Origin not allowed' });
+    }
+  }
+
   const ip = req.headers['x-forwarded-for']?.split(',')[0]?.trim() || req.socket.remoteAddress;
 
   if (isRateLimited(ip)) {
@@ -146,6 +170,20 @@ wss.on('connection', (ws, req) => {
     return;
   }
 
+  const IDLE_TIMEOUT = 30 * 60 * 1000;
+  let lastActivity = Date.now();
+  const idleCheck = setInterval(() => {
+    if (Date.now() - lastActivity > IDLE_TIMEOUT) {
+      ws.send(JSON.stringify({ type: 'output', data: '\r\n[Session timed out due to inactivity]\r\n' }));
+      ws.close();
+    }
+  }, 60 * 1000);
+
+  // Token bucket: 100 messages/sec with burst allowance
+  const MSG_RATE = 100;
+  let msgTokens = MSG_RATE;
+  const tokenRefill = setInterval(() => { msgTokens = MSG_RATE; }, 1000);
+
   const ptyProcess = pty.spawn(shell, [], {
     name: 'xterm-256color',
     cols: 80,
@@ -166,16 +204,22 @@ wss.on('connection', (ws, req) => {
 
   ws.on('message', (msg) => {
     try {
+      if (--msgTokens < 0) return;
+      lastActivity = Date.now();
       const parsed = JSON.parse(msg);
       if (parsed.type === 'input') {
         ptyProcess.write(parsed.data);
       } else if (parsed.type === 'resize') {
-        ptyProcess.resize(parsed.cols, parsed.rows);
+        const cols = Math.min(Math.max(Math.floor(parsed.cols), 1), 500);
+        const rows = Math.min(Math.max(Math.floor(parsed.rows), 1), 200);
+        ptyProcess.resize(cols, rows);
       }
     } catch (e) {}
   });
 
   ws.on('close', () => {
+    clearInterval(idleCheck);
+    clearInterval(tokenRefill);
     ptyProcess.kill();
   });
 
@@ -200,13 +244,16 @@ server.listen(PORT, '0.0.0.0', async () => {
   console.log(`  IP allow: ${ALLOWED_IPS.length ? ALLOWED_IPS.join(', ') : 'all (no restriction)'}`);
 
   if (process.argv.includes('--tunnel')) {
-    try {
-      const localtunnel = require('localtunnel');
-      const tunnel = await localtunnel({ port: PORT });
-      console.log(`  Tunnel:  ${tunnel.url}`);
-      tunnel.on('close', () => console.log('Tunnel closed'));
-    } catch (e) {
-      console.error('Tunnel failed:', e.message);
-    }
+    const { spawn } = require('child_process');
+    const cfPath = os.platform() === 'win32' ? 'C:\\Program Files (x86)\\cloudflared\\cloudflared.exe' : 'cloudflared';
+    const localUrl = useHTTPS ? `https://localhost:${PORT}` : `http://localhost:${PORT}`;
+    const args = ['tunnel', '--url', localUrl];
+    if (useHTTPS) args.push('--no-tls-verify');
+    const cf = spawn(cfPath, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+    cf.stderr.on('data', (data) => {
+      const match = data.toString().match(/https:\/\/[^\s]+\.trycloudflare\.com/);
+      if (match) console.log(`  Tunnel:  ${match[0]}`);
+    });
+    cf.on('close', () => console.log('Tunnel closed'));
   }
 });
