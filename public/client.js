@@ -3,12 +3,9 @@ const terminalScreen = document.getElementById('terminal-screen');
 const passwordInput = document.getElementById('password');
 const loginBtn = document.getElementById('login-btn');
 const errorMsg = document.getElementById('error-msg');
-const ctrlBtn = document.getElementById('ctrl-btn');
-
 let ws = null;
 let term = null;
 let fitAddon = null;
-let ctrlActive = false;
 
 async function connect(password) {
   errorMsg.textContent = '';
@@ -79,15 +76,6 @@ function initTerminal() {
   fitAddon.fit();
 
   term.onData((data) => {
-    if (ctrlActive) {
-      // Convert to ctrl character: 'a' -> \x01, 'c' -> \x03, etc.
-      const char = data.toLowerCase();
-      if (char >= 'a' && char <= 'z') {
-        data = String.fromCharCode(char.charCodeAt(0) - 96);
-      }
-      ctrlActive = false;
-      ctrlBtn.classList.remove('active');
-    }
     ws.send(JSON.stringify({ type: 'input', data }));
   });
 
@@ -146,23 +134,6 @@ function sendResize() {
 loginBtn.addEventListener('click', () => connect(passwordInput.value));
 passwordInput.addEventListener('keydown', (e) => {
   if (e.key === 'Enter') connect(passwordInput.value);
-});
-
-document.querySelectorAll('#toolbar button[data-key]').forEach((btn) => {
-  btn.addEventListener('click', (e) => {
-    e.preventDefault();
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: 'input', data: btn.dataset.key }));
-    }
-    term?.focus();
-  });
-});
-
-ctrlBtn.addEventListener('click', (e) => {
-  e.preventDefault();
-  ctrlActive = !ctrlActive;
-  ctrlBtn.classList.toggle('active', ctrlActive);
-  term?.focus();
 });
 
 window.addEventListener('orientationchange', () => {

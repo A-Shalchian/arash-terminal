@@ -88,38 +88,6 @@ html, body {
   touch-action: none;
 }
 
-/* Toolbar */
-#toolbar {
-  display: flex;
-  gap: 4px;
-  padding: 6px;
-  background: #16213e;
-  border-top: 1px solid #0f3460;
-  flex-shrink: 0;
-}
-
-#toolbar button {
-  flex: 1;
-  padding: 10px 0;
-  background: #0f3460;
-  color: #e0e0e0;
-  border: none;
-  border-radius: 6px;
-  font-size: 13px;
-  cursor: pointer;
-  touch-action: manipulation;
-  -webkit-tap-highlight-color: transparent;
-}
-
-#toolbar button:active {
-  background: #e94560;
-}
-
-#toolbar button.active {
-  background: #e94560;
-  color: white;
-}
-
 /* xterm overrides */
 .xterm {
   padding: 4px;
